@@ -139,7 +139,7 @@ class FieldParser:
     def check_size_(self, size: str):
         """Generate a check of the current span size."""
         self.append_(f"if len(span) < {size}:")
-        self.append_(f"    raise Exception('Invalid packet size')")
+        self.append_("    raise Exception('Invalid packet size')")
 
     def check_code_(self):
         """Generate a size check for pending field parsing."""
@@ -169,14 +169,13 @@ class FieldParser:
         """Parse a single array field element of constant size."""
         if field.width is not None:
             element = f"int.from_bytes({span}, byteorder='{self.byteorder}')"
-            self.append_(f"    {field.id}.append({element})")
         elif isinstance(field.type, ast.EnumDeclaration):
             element = f"int.from_bytes({span}, byteorder='{self.byteorder}')"
             element = f"{field.type_id}({element})"
-            self.append_(f"    {field.id}.append({element})")
         else:
             element = f"{field.type_id}.parse_all({span})"
-            self.append_(f"    {field.id}.append({element})")
+
+        self.append_(f"    {field.id}.append({element})")
 
     def parse_byte_array_field_(self, field: ast.ArrayField):
         """Parse the selected u8 array field."""
@@ -211,7 +210,7 @@ class FieldParser:
 
         else:
             self.append_(f"fields['{field.id}'] = list(span)")
-            self.append_(f"span = bytes()")
+            self.append_("span = bytes()")
 
     def parse_array_field_(self, field: ast.ArrayField):
         """Parse the selected array field."""
@@ -261,25 +260,18 @@ class FieldParser:
             self.append_(f"fields['{field.id}'] = {field.id}")
             self.append_(f"span = span[{size}:]")
 
-        # The element width is not known, but the array element count
-        # is known statically or by count field.
-        # Parse elements item by item as a vector.
         elif element_width is None and count is not None:
             self.append_(f"{field.id} = []")
             self.append_(f"for n in range({count}):")
             self.parse_array_element_dynamic_(field, 'span')
             self.append_(f"fields['{field.id}'] = {field.id}")
 
-        # Neither the count not size is known,
-        # parse elements until the end of the span.
         elif element_width is None:
             self.append_(f"{field.id} = []")
             self.append_("while len(span) > 0:")
             self.parse_array_element_dynamic_(field, 'span')
             self.append_(f"fields['{field.id}'] = {field.id}")
 
-        # The element width is known, and the array element count is known
-        # statically, or by count field.
         elif count is not None:
             array_size = (f'{count}' if element_width == 1 else f'{count} * {element_width}')
             self.check_size_(array_size)
@@ -290,9 +282,6 @@ class FieldParser:
             self.append_(f"fields['{field.id}'] = {field.id}")
             self.append_(f"span = span[{array_size}:]")
 
-        # The element width is known, and the array full size is known
-        # by size field, or unknown (in which case it is the remaining span
-        # length).
         else:
             if size is not None:
                 self.check_size_(size)
@@ -312,11 +301,11 @@ class FieldParser:
             if size is not None:
                 self.append_(f"span = span[{size}:]")
             else:
-                self.append_(f"span = bytes()")
+                self.append_("span = bytes()")
 
         # Drop the padding
         if padded_size:
-            self.append_(f"span = remaining_span")
+            self.append_("span = remaining_span")
 
     def parse_bit_field_(self, field: ast.Field):
         """Parse the selected field as a bit field.
@@ -351,19 +340,17 @@ class FieldParser:
                 self.unchecked_append_(f"fields['{field.id}'] = {v}")
             elif isinstance(field, ast.FixedField) and field.enum_id:
                 self.unchecked_append_(f"if {v} != {field.enum_id}.{field.tag_id}:")
-                self.unchecked_append_(f"    raise Exception('Unexpected fixed field value')")
+                self.unchecked_append_("    raise Exception('Unexpected fixed field value')")
             elif isinstance(field, ast.FixedField):
                 self.unchecked_append_(f"if {v} != {hex(field.value)}:")
-                self.unchecked_append_(f"    raise Exception('Unexpected fixed field value')")
+                self.unchecked_append_("    raise Exception('Unexpected fixed field value')")
             elif isinstance(field, ast.TypedefField):
                 self.unchecked_append_(f"fields['{field.id}'] = {field.type_id}({v})")
             elif isinstance(field, ast.SizeField):
                 self.unchecked_append_(f"{field.field_id}_size = {v}")
             elif isinstance(field, ast.CountField):
                 self.unchecked_append_(f"{field.field_id}_count = {v}")
-            elif isinstance(field, ast.ReservedField):
-                pass
-            else:
+            elif not isinstance(field, ast.ReservedField):
                 raise Exception(f'Unsupported bit field type {field.kind}')
 
         # Reset state.
@@ -425,13 +412,9 @@ class FieldParser:
             self.check_size_(f'{field.id}_size')
             self.append_(f"payload = span[:{field.id}_size]")
             self.append_(f"span = span[{field.id}_size:]")
-        # The payload or body is the last field of a packet,
-        # consume the remaining span.
         elif offset_from_end == 0:
-            self.append_(f"payload = span")
-            self.append_(f"span = bytes([])")
-        # The payload or body is followed by fields of static size.
-        # Consume the span that is not reserved for the following fields.
+            self.append_("payload = span")
+            self.append_("span = bytes([])")
         elif offset_from_end is not None:
             if (offset_from_end % 8) != 0:
                 raise Exception('Payload field offset from end of packet is not a multiple of 8')
@@ -439,7 +422,7 @@ class FieldParser:
             self.check_size_(f'{offset_from_end}')
             self.append_(f"payload = span[:-{offset_from_end}]")
             self.append_(f"span = span[-{offset_from_end}:]")
-        self.append_(f"fields['payload'] = payload")
+        self.append_("fields['payload'] = payload")
 
     def parse_checksum_field_(self, field: ast.ChecksumField):
         """Generate a checksum check."""
@@ -449,12 +432,12 @@ class FieldParser:
         # of the span otherwise.
         self.consume_span_()
         value_field = core.get_packet_field(field.parent, field.field_id)
-        offset_from_start = 0
         offset_from_end = 0
         start_index = field.parent.fields.index(field)
         value_index = field.parent.fields.index(value_field)
         value_size = int(core.get_field_size(value_field) / 8)
 
+        offset_from_start = 0
         for f in field.parent.fields[start_index + 1:value_index]:
             size = core.get_field_size(f)
             if size is None:
@@ -507,8 +490,9 @@ class FieldParser:
         self.append_(f"fields['{value_field.id}'] = {value_field.id}")
         self.append_(f"computed_{value_field.id} = {value_field.type.function}({checksum_span})")
         self.append_(f"if computed_{value_field.id} != {value_field.id}:")
-        self.append_("    raise Exception(f'Invalid checksum computation:" +
-                     f" {{computed_{value_field.id}}} != {{{value_field.id}}}')")
+        self.append_(
+            f"    raise Exception(f'Invalid checksum computation: {{computed_{value_field.id}}} != {{{value_field.id}}}')"
+        )
 
     def parse(self, field: ast.Field):
         # Field has bit granularity.
@@ -659,9 +643,7 @@ class FieldSerializer:
                          f"  {{len(self.{field.field_id})}} > {max_count}; the array will be truncated\")")
             self.append_(f"    del self.{field.field_id}[{max_count}:]")
             self.value.append(f"(len(self.{field.field_id}) << {shift})")
-        elif isinstance(field, ast.ReservedField):
-            pass
-        else:
+        elif not isinstance(field, ast.ReservedField):
             raise Exception(f'Unsupported bit field type {field.kind}')
 
         # Check if a byte boundary is reached.
@@ -684,7 +666,7 @@ class FieldSerializer:
         elif len(self.value) == 1:
             self.extend_(self.value[0], size)
         else:
-            self.append_(f"_value = (")
+            self.append_("_value = (")
             self.append_("    " + " |\n    ".join(self.value))
             self.append_(")")
             self.extend_('_value', size)
@@ -715,7 +697,7 @@ class FieldSerializer:
             raise Exception('Payload field does not start on an octet boundary')
 
         if self.shift == 0:
-            self.append_(f"_span.extend(payload or self.payload or [])")
+            self.append_("_span.extend(payload or self.payload or [])")
         else:
             # Supported case of packet inheritance;
             # the incomplete fields are serialized into
@@ -724,7 +706,7 @@ class FieldSerializer:
             # then recombine them with the bit fields to be serialized.
             rounded_size = int((self.shift + 7) / 8)
             padding_bits = 8 * rounded_size - self.shift
-            self.append_(f"_payload = payload or self.payload or bytes()")
+            self.append_("_payload = payload or self.payload or bytes()")
             self.append_(f"if len(_payload) < {rounded_size}:")
             self.append_(f"    raise Exception(f\"Invalid length for payload field:" +
                          f"  {{len(_payload)}} < {rounded_size}\")")
@@ -835,11 +817,14 @@ def generate_packet_parser(packet: ast.Declaration) -> List[str]:
         # TODO: order child packets by decreasing size in case no constraint
         # is given for specialization.
         for _, child in children:
-            specialization.append("try:")
-            specialization.append(f"    return {child.id}.parse(fields.copy(), payload)")
-            specialization.append("except Exception as exn:")
-            specialization.append("    pass")
-
+            specialization.extend(
+                (
+                    "try:",
+                    f"    return {child.id}.parse(fields.copy(), payload)",
+                    "except Exception as exn:",
+                    "    pass",
+                )
+            )
     return decl + validation + parser.code + specialization + [f"return {packet.id}(**fields), span"]
 
 
@@ -864,7 +849,7 @@ def generate_packet_size_getter(packet: ast.Declaration) -> List[str]:
             raise Exception("Unsupported field type")
 
     constant_width = int(constant_width / 8)
-    if len(variable_width) == 0:
+    if not variable_width:
         return [f"return {constant_width}"]
     elif len(variable_width) == 1 and constant_width:
         return [f"return {variable_width[0]} + {constant_width}"]
@@ -888,28 +873,23 @@ def generate_packet_post_init(decl: ast.Declaration) -> List[str]:
         constraints.extend(current.constraints)
         current = current.parent
 
-    if constraints:
-        code = []
-        for c in constraints:
-            if c.value is not None:
-                code.append(f"self.{c.id} = {c.value}")
-            else:
-                field = core.get_packet_field(decl, c.id)
-                code.append(f"self.{c.id} = {field.type_id}.{c.tag_id}")
-        return code
-
-    else:
+    if not constraints:
         return ["pass"]
+    code = []
+    for c in constraints:
+        if c.value is not None:
+            code.append(f"self.{c.id} = {c.value}")
+        else:
+            field = core.get_packet_field(decl, c.id)
+            code.append(f"self.{c.id} = {field.type_id}.{c.tag_id}")
+    return code
 
 
 def generate_enum_declaration(decl: ast.EnumDeclaration) -> str:
     """Generate the implementation of an enum type."""
 
     enum_name = decl.id
-    tag_decls = []
-    for t in decl.tags:
-        tag_decls.append(f"{t.id} = {hex(t.value)}")
-
+    tag_decls = [f"{t.id} = {hex(t.value)}" for t in decl.tags]
     return dedent("""\
 
         class {enum_name}(enum.IntEnum):

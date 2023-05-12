@@ -52,7 +52,7 @@ def create_object(typ, value):
     """Build an object of the selected type using the input value."""
     if dataclasses.is_dataclass(typ):
         field_types = dict([(f.name, f.type) for f in dataclasses.fields(typ)])
-        values = dict()
+        values = {}
         for (f, v) in value.items():
             field_type = field_types[f]
             values[f] = create_object(field_type, v)

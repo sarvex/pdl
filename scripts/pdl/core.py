@@ -65,7 +65,7 @@ def desugar(file: File):
         if isinstance(d, (PacketDeclaration, StructDeclaration)):
             fields = []
             for f in d.fields:
-                fields.extend(desugar_field_(f, fields[-1] if len(fields) > 0 else None, {}))
+                fields.extend(desugar_field_(f, fields[-1] if fields else None, {}))
             d.fields = fields
 
         declarations.append(d)
@@ -132,12 +132,11 @@ def get_packet_shift(packet: Union[PacketDeclaration, StructDeclaration]) -> int
     for f in packet.parent.fields:
         if isinstance(f, (BodyField, PayloadField)):
             return 0 if (shift % 8) == 0 else shift
-        else:
-            # Fields that do not have a constant size are assumed to start
-            # on a byte boundary, and measure an integral number of bytes.
-            # Start the count over.
-            size = get_field_size(f)
-            shift = 0 if size is None else shift + size
+        # Fields that do not have a constant size are assumed to start
+        # on a byte boundary, and measure an integral number of bytes.
+        # Start the count over.
+        size = get_field_size(f)
+        shift = 0 if size is None else shift + size
 
     # No payload or body in parent packet.
     # Not raising an error, the generation will fail somewhere else.
@@ -240,20 +239,29 @@ def get_array_field_size(field: ArrayField) -> Union[None, int, Field]:
 
     if field.size is not None:
         return field.size
-    for f in field.parent.fields:
-        if isinstance(f, (SizeField, CountField)) and f.field_id == field.id:
-            return f
-    return None
+    return next(
+        (
+            f
+            for f in field.parent.fields
+            if isinstance(f, (SizeField, CountField))
+            and f.field_id == field.id
+        ),
+        None,
+    )
 
 
 def get_payload_field_size(field: Union[PayloadField, BodyField]) -> Optional[Field]:
     """Return the payload or body size field.
     If the payload is unsized None is returned instead."""
 
-    for f in field.parent.fields:
-        if isinstance(f, SizeField) and f.field_id == field.id:
-            return f
-    return None
+    return next(
+        (
+            f
+            for f in field.parent.fields
+            if isinstance(f, SizeField) and f.field_id == field.id
+        ),
+        None,
+    )
 
 
 def get_array_element_size(field: ArrayField) -> Optional[int]:
@@ -299,14 +307,17 @@ def get_unconstrained_parent_fields(decl: Union[PacketDeclaration, StructDeclara
     The fields are returned in order of declaration."""
 
     def constraint_ids(constraints: List[Constraint]) -> Set[str]:
-        return set([c.id for c in constraints])
+        return {c.id for c in constraints}
 
     def aux(decl: Optional[Declaration], constraints: Set[str]) -> List[Field]:
         if decl is None:
             return []
         fields = aux(decl.parent, constraints.union(constraint_ids(decl.constraints)))
         for f in decl.fields:
-            if (isinstance(f, (ScalarField, ArrayField, TypedefField)) and not f.id in constraints):
+            if (
+                isinstance(f, (ScalarField, ArrayField, TypedefField))
+                and f.id not in constraints
+            ):
                 fields.append(f)
         return fields
 

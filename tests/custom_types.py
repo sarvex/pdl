@@ -22,12 +22,12 @@ class SizedCustomField:
     def __init__(self, value: int = 0):
         self.value = value
 
-    def parse(span: bytes) -> Tuple['SizedCustomField', bytes]:
-        return (SizedCustomField(span[0]), span[1:])
+    def parse(self) -> Tuple['SizedCustomField', bytes]:
+        return SizedCustomField(self[0]), self[1:]
 
-    def parse_all(span: bytes) -> 'SizedCustomField':
-        assert (len(span) == 1)
-        return SizedCustomField(span[0])
+    def parse_all(self) -> 'SizedCustomField':
+        assert len(self) == 1
+        return SizedCustomField(self[0])
 
     @property
     def size(self) -> int:
@@ -40,12 +40,12 @@ class UnsizedCustomField:
     def __init__(self, value: int = 0):
         self.value = value
 
-    def parse(span: bytes) -> Tuple['UnsizedCustomField', bytes]:
-        return (UnsizedCustomField(span[0]), span[1:])
+    def parse(self) -> Tuple['UnsizedCustomField', bytes]:
+        return UnsizedCustomField(self[0]), self[1:]
 
-    def parse_all(span: bytes) -> 'UnsizedCustomField':
-        assert (len(span) == 1)
-        return UnsizedCustomField(span[0])
+    def parse_all(self) -> 'UnsizedCustomField':
+        assert len(self) == 1
+        return UnsizedCustomField(self[0])
 
     @property
     def size(self) -> int:

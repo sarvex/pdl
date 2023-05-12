@@ -137,9 +137,7 @@ class FieldParser:
                 self.unchecked_append_(f"{field.field_id}_size = {v};")
             elif isinstance(field, ast.CountField):
                 self.unchecked_append_(f"{field.field_id}_count = {v};")
-            elif isinstance(field, ast.ReservedField):
-                pass
-            else:
+            elif not isinstance(field, ast.ReservedField):
                 raise Exception(f'Unsupported bit field type {field.kind}')
 
         # Reset state.
@@ -231,7 +229,7 @@ class FieldParser:
             self.append_("span.clear();")
 
         if padded_size:
-            self.append_(f"span = remaining_span;")
+            self.append_("span = remaining_span;")
             self.append_("}")
 
     def parse_array_field_full_(self, field: ast.ArrayField):
@@ -288,7 +286,7 @@ class FieldParser:
             if field.width:
                 element_size = int(field.width / 8)
                 self.append_(f"    if (temp_span.size() < {element_size}) {{")
-                self.append_(f"        return false;")
+                self.append_("        return false;")
                 self.append_("    }")
                 self.append_(
                     f"    {field.id}_.push_back(temp_span.read_{self.byteorder}<{element_type}, {element_size}>());")
@@ -296,7 +294,7 @@ class FieldParser:
                 backing_type = get_cxx_scalar_type(field.type.width)
                 element_size = int(field.type.width / 8)
                 self.append_(f"    if (temp_span.size() < {element_size}) {{")
-                self.append_(f"        return false;")
+                self.append_("        return false;")
                 self.append_("    }")
                 self.append_(
                     f"    {field.id}_.push_back({element_type}(temp_span.read_{self.byteorder}<{backing_type}, {element_size}>()));"
@@ -304,14 +302,10 @@ class FieldParser:
             else:
                 self.append_(f"    {element_type} element;")
                 self.append_(f"    if (!{element_type}::Parse(temp_span, &element)) {{")
-                self.append_(f"        return false;")
+                self.append_("        return false;")
                 self.append_("    }")
                 self.append_(f"    {field.id}_.emplace_back(std::move(element));")
             self.append_("}")
-            self.append_("}")
-
-        # The array count is known. The element width is dynamic.
-        # Parse each element iteratively and derive the array span.
         elif count is not None:
             self.append_(f"for (size_t n = 0; n < {count}; n++) {{")
             self.append_(f"    {element_type} element;")
@@ -319,41 +313,34 @@ class FieldParser:
             self.append_("        return false;")
             self.append_("    }")
             self.append_(f"    {field.id}_.emplace_back(std::move(element));")
-            self.append_("}")
-
-        # The array size is not known, assume the array takes the
-        # full remaining space. TODO support having fixed sized fields
-        # following the array.
         elif field.width:
             element_size = int(field.width / 8)
             self.append_(f"while (span.size() > 0) {{")
             self.append_(f"    if (span.size() < {element_size}) {{")
-            self.append_(f"        return false;")
+            self.append_("        return false;")
             self.append_("    }")
             self.append_(f"    {field.id}_.push_back(span.read_{self.byteorder}<{element_type}, {element_size}>());")
-            self.append_("}")
         elif isinstance(field.type, ast.EnumDeclaration):
             element_size = int(field.type.width / 8)
             backing_type = get_cxx_scalar_type(field.type.width)
             self.append_(f"while (span.size() > 0) {{")
             self.append_(f"    if (span.size() < {element_size}) {{")
-            self.append_(f"        return false;")
+            self.append_("        return false;")
             self.append_("    }")
             self.append_(
                 f"    {field.id}_.push_back({element_type}(span.read_{self.byteorder}<{backing_type}, {element_size}>()));"
             )
-            self.append_("}")
         else:
             self.append_(f"while (span.size() > 0) {{")
             self.append_(f"    {element_type} element;")
             self.append_(f"    if (!{element_type}::Parse(span, &element)) {{")
-            self.append_(f"        return false;")
+            self.append_("        return false;")
             self.append_("    }")
             self.append_(f"    {field.id}_.emplace_back(std::move(element));")
-            self.append_("}")
+        self.append_("}")
 
         if padded_size:
-            self.append_(f"span = remaining_span;")
+            self.append_("span = remaining_span;")
             self.append_("}")
 
     def parse_payload_field_lite_(self, field: Union[ast.BodyField, ast.PayloadField]):
@@ -375,20 +362,16 @@ class FieldParser:
             self.check_size_(f"{field.id}_size")
             self.append_(f"payload_ = span.subrange(0, {field.id}_size);")
             self.append_(f"span.skip({field.id}_size);")
-        # The payload or body is the last field of a packet,
-        # consume the remaining span.
         elif offset_from_end == 0:
-            self.append_(f"payload_ = span;")
-            self.append_(f"span.clear();")
-        # The payload or body is followed by fields of static size.
-        # Consume the span that is not reserved for the following fields.
+            self.append_("payload_ = span;")
+            self.append_("span.clear();")
         elif offset_from_end:
             if (offset_from_end % 8) != 0:
                 raise Exception('Payload field offset from end of packet is not a multiple of 8')
             offset_from_end = int(offset_from_end / 8)
             self.check_size_(f'{offset_from_end}')
             self.append_(f"payload_ = span.subrange(0, span.size() - {offset_from_end});")
-            self.append_(f"span.skip(payload_.size());")
+            self.append_("span.skip(payload_.size());")
 
     def parse_payload_field_full_(self, field: Union[ast.BodyField, ast.PayloadField]):
         """Parse body and payload fields."""
@@ -434,26 +417,22 @@ class FieldParser:
         if core.is_bit_field(field):
             self.parse_bit_field_(field)
 
-        # Padding fields.
         elif isinstance(field, ast.PaddingField):
             pass
 
-        # Array fields.
         elif isinstance(field, ast.ArrayField) and self.extract_arrays:
             self.parse_array_field_full_(field)
 
-        elif isinstance(field, ast.ArrayField) and not self.extract_arrays:
+        elif isinstance(field, ast.ArrayField):
             self.parse_array_field_lite_(field)
 
-        # Other typedef fields.
         elif isinstance(field, ast.TypedefField):
             self.parse_typedef_field_(field)
 
-        # Payload and body fields.
         elif isinstance(field, (ast.PayloadField, ast.BodyField)) and self.extract_arrays:
             self.parse_payload_field_full_(field)
 
-        elif isinstance(field, (ast.PayloadField, ast.BodyField)) and not self.extract_arrays:
+        elif isinstance(field, (ast.PayloadField, ast.BodyField)):
             self.parse_payload_field_lite_(field)
 
         else:
@@ -596,9 +575,7 @@ class FieldSerializer:
             max_count = (1 << field.width) - 1
             self.value.append((f"{field.field_id}_.size()", shift))
 
-        elif isinstance(field, ast.ReservedField):
-            pass
-        else:
+        elif not isinstance(field, ast.ReservedField):
             raise Exception(f'Unsupported bit field type {field.kind}')
 
         # Check if a byte boundary is reached.
@@ -618,7 +595,7 @@ class FieldSerializer:
         backing_type = get_cxx_scalar_type(self.shift)
         value = [f"(static_cast<{backing_type}>({v[0]}) << {v[1]})" for v in self.value]
 
-        if len(value) == 0:
+        if not value:
             self.append_(f"pdl::packet::Builder::write_{self.byteorder}<{backing_type}, {size}>(output, 0);")
         elif len(value) == 1:
             self.append_(f"pdl::packet::Builder::write_{self.byteorder}<{backing_type}, {size}>(output, {value[0]});")
@@ -682,10 +659,7 @@ def generate_enum_declaration(decl: ast.EnumDeclaration) -> str:
 
     enum_name = decl.id
     enum_type = get_cxx_scalar_type(decl.width)
-    tag_decls = []
-    for t in decl.tags:
-        tag_decls.append(f"{t.id} = {hex(t.value)},")
-
+    tag_decls = [f"{t.id} = {hex(t.value)}," for t in decl.tags]
     return dedent("""\
 
         enum class {enum_name} : {enum_type} {{
@@ -698,10 +672,9 @@ def generate_enum_to_text(decl: ast.EnumDeclaration) -> str:
     """Generate the helper function that will convert an enum tag to string."""
 
     enum_name = decl.id
-    tag_cases = []
-    for t in decl.tags:
-        tag_cases.append(f"case {enum_name}::{t.id}: return \"{t.id}\";")
-
+    tag_cases = [
+        f'case {enum_name}::{t.id}: return \"{t.id}\";' for t in decl.tags
+    ]
     return dedent("""\
 
         inline std::string {enum_name}Text({enum_name} tag) {{
@@ -754,16 +727,15 @@ def generate_packet_field_serializers(packet: ast.Declaration) -> List[str]:
     constraints = dict([(c.id, c) for c in constraints])
     for field in core.get_packet_fields(packet):
         field_id = getattr(field, 'id', None)
-        constraint = constraints.get(field_id, None)
         fixed_field = None
-        if constraint and constraint.tag_id:
-            fixed_field = ast.FixedField(enum_id=field.type_id,
-                                         tag_id=constraint.tag_id,
-                                         loc=field.loc,
-                                         kind='fixed_field')
-            fixed_field.parent = field.parent
-        elif constraint:
-            fixed_field = ast.FixedField(width=field.width, value=constraint.value, loc=field.loc, kind='fixed_field')
+        if constraint := constraints.get(field_id, None):
+            if constraint.tag_id:
+                fixed_field = ast.FixedField(enum_id=field.type_id,
+                                             tag_id=constraint.tag_id,
+                                             loc=field.loc,
+                                             kind='fixed_field')
+            else:
+                fixed_field = ast.FixedField(width=field.width, value=constraint.value, loc=field.loc, kind='fixed_field')
             fixed_field.parent = field.parent
         serializer.serialize(fixed_field or field, packet)
     return serializer.code
@@ -1013,11 +985,9 @@ def generate_packet_view_field_parsers(packet: ast.PacketDeclaration) -> str:
                 return false;
             }
             """))
-        parent_fields = core.get_unconstrained_parent_fields(packet)
-        if parent_fields:
+        if parent_fields := core.get_unconstrained_parent_fields(packet):
             code.append("// Copy parent field values.")
-            for f in parent_fields:
-                code.append(f"{f.id}_ = parent.{f.id}_;")
+            code.extend(f"{f.id}_ = parent.{f.id}_;" for f in parent_fields)
             code.append("")
         span = "parent.payload_"
     else:
@@ -1043,8 +1013,12 @@ def generate_packet_view_field_parsers(packet: ast.PacketDeclaration) -> str:
 
     # Parse fields linearly.
     if packet.fields:
-        code.append("// Parse packet field values.")
-        code.append(f"pdl::packet::slice span = {span};")
+        code.extend(
+            (
+                "// Parse packet field values.",
+                f"pdl::packet::slice span = {span};",
+            )
+        )
         for f in packet.fields:
             if isinstance(f, ast.SizeField):
                 code.append(f"{get_cxx_scalar_type(f.width)} {f.field_id}_size;")
@@ -1237,8 +1211,7 @@ def generate_struct_field_parsers(struct: ast.StructDeclaration) -> str:
     code.extend(parser.code)
 
     parsed_fields = ', '.join(parsed_fields)
-    code.append(f"*output = {struct.id}({parsed_fields});")
-    code.append("return true;")
+    code.extend((f"*output = {struct.id}({parsed_fields});", "return true;"))
     return '\n'.join(code)
 
 

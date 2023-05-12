@@ -101,9 +101,6 @@ def generate_packet_parser_test(parser_test_suite: str, packet: ast.PacketDeclar
                 for (n, value) in enumerate(value):
                     checks.extend(check_members(field.type, f"{field_var}[{n}]", value))
 
-            else:
-                pass
-
         return checks
 
     generated_tests = []
@@ -192,9 +189,6 @@ def generate_packet_serializer_test(serializer_test_suite: str, packet: ast.Pack
                     declarations.append(f"    {element},")
                 declarations.append("};")
                 parameters.append(f"std::move({field_var})")
-
-            else:
-                pass
 
         constructor_name = f'{decl.id}Builder' if isinstance(decl, ast.PacketDeclaration) else decl.id
         return (f"{constructor_name}({', '.join(parameters)})", declarations)
@@ -286,8 +280,9 @@ def run(input: argparse.FileType, output: argparse.FileType, test_vectors: argpa
 
         if isinstance(decl, ast.PacketDeclaration):
             matching_tests = [test['tests'] for test in tests if test['packet'] == decl.id]
-            matching_tests = [test for test_list in matching_tests for test in test_list]
-            if matching_tests:
+            if matching_tests := [
+                test for test_list in matching_tests for test in test_list
+            ]:
                 output.write(generate_packet_parser_test(parser_test_suite, decl, matching_tests))
                 output.write(generate_packet_serializer_test(serializer_test_suite, decl, matching_tests))
 

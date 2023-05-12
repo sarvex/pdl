@@ -15,7 +15,7 @@
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Tuple
 
-constructors_ = dict()
+constructors_ = {}
 
 
 def node(kind: str):
@@ -229,9 +229,9 @@ class File:
     group_scope: Dict[str, Declaration] = field(init=False)
 
     def __post_init__(self):
-        self.packet_scope = dict()
-        self.typedef_scope = dict()
-        self.group_scope = dict()
+        self.packet_scope = {}
+        self.typedef_scope = {}
+        self.group_scope = {}
 
         # Construct the toplevel declaration scopes.
         for d in self.declarations:
@@ -275,7 +275,7 @@ def convert_(obj: object) -> object:
         constructor = constructors_.get(kind)
         members = {'loc': loc, 'kind': kind}
         for name, value in obj.items():
-            if name != 'kind' and name != 'loc':
+            if name not in ['kind', 'loc']:
                 members[name] = convert_(value)
         return constructor(**members)
     raise Exception('Unhandled json object type')
